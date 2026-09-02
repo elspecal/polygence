@@ -8,7 +8,7 @@ export function ReviewStudent() {
   const { uuid } = useParams();
   const { pathname } = useLocation();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const [responseRecorded, setResponseRecorded] = useState(false);
   const [isMatched, setIsMatched] = useState(false);
   const [studentName, setStudentName] = useState("The student");
@@ -28,11 +28,10 @@ export function ReviewStudent() {
         setResponseRecorded(true);
       })
       .catch((err) => {
-        if (err.response && err.response.data?.error === "Response already recorded") {
-          setResponseRecorded(true);
-        } else {
-          setError(true);
-        }
+        setError(
+          err.response?.data?.error ||
+            "Something went wrong. Please contact us at mentors@example.com.",
+        );
       })
       .finally(() => {
         setLoading(false);
@@ -42,11 +41,7 @@ export function ReviewStudent() {
   return (
     <div className="panel">
       {loading && <p>Loading…</p>}
-      {error && (
-        <div className="alert alert-danger">
-          Something went wrong. Please contact us at mentors@example.com.
-        </div>
-      )}
+      {error && <div className="alert alert-danger">{error}</div>}
       {responseRecorded && response === "accept" && !isMatched && (
         <div className="alert alert-success">Your response has been recorded.</div>
       )}
@@ -57,7 +52,11 @@ export function ReviewStudent() {
         </div>
       )}
       {responseRecorded && (
-        <FeedbackForm uuid={uuid} response={response} updateResponse={api.partialUpdateReviewStudent} />
+        <FeedbackForm
+          uuid={uuid}
+          response={response}
+          updateResponse={api.partialUpdateReviewStudent}
+        />
       )}
     </div>
   );
