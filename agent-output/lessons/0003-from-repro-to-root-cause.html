@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lesson 0003 · From repro to root cause</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <link rel="stylesheet" href="../assets/quiz.css" />
+</head>
+<body>
+  <main>
+    <header class="doc">
+      <p class="kicker">Lesson 0003 · Mission: fix the matching take-home</p>
+      <h1>From repro to root cause</h1>
+      <p class="muted">Today's win: your findings, pinned to code lines and written the way you'll defend them in an interview. Nothing new to discover — everything new to <em>say</em>.</p>
+    </header>
+
+    <p>
+      You found the mixed states, quoted the guards, and caught this course in an error along
+      the way. Lesson 0003 is consolidation: pin your request log to the exact lines that
+      decided each response, then compress the whole story into sentences that survive an
+      interviewer's follow-ups.
+    </p>
+
+    <h2>Your request log, pinned to code</h2>
+    <p>
+      Here is the Ops repro — <strong>accept, then decline link, then decline reasons</strong> —
+      as a request log with the code that decided each outcome. Read each row, then find each
+      line in the repo yourself; a line number you haven't opened won't hold up under
+      questioning.
+    </p>
+    <table>
+      <thead><tr><th>#</th><th>What happens</th><th>Where</th><th>What the code decides</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Mentor clicks <strong>Accept</strong>; <code>POST</code> records the decision</td>
+          <td><code>views.py:27-28</code> guard passes → <code>services/student_proposal.py:22-28</code></td>
+          <td>Fresh dict <code>{value: "accept", recorded_at}</code>; 200</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Mentor clicks <strong>Decline</strong>; <code>ReviewStudent</code> fires <code>GET</code> + <code>POST reject</code> on mount</td>
+          <td><code>ReviewStudent.jsx:18-40</code>, refusal born at <code>views.py:27-28</code></td>
+          <td>400 <code>"Response already recorded"</code> — but <code>ReviewStudent.jsx:31-33</code> treats it as success</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Decline form renders; mentor checks boxes and submits <code>PATCH reason</code></td>
+          <td><code>views.py:37-38</code> guard → <code>services/student_proposal.py:31-38</code></td>
+          <td>Guard asks only "is reason already present?" — never "what decision was recorded?" → <code>reason</code> merges into an accepted proposal</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      Your mirror run is the same three lines in a different costume: the decision recorded is
+      <code>reject</code>, the swallowed 400 comes from the <em>accept</em> link, and step 3
+      carries <code>match_rating</code> instead of <code>reason</code>. Same guard, same gap.
+      And your variant — decline reasons first — showed the one case the reason-guard <em>does</em>
+      stop, which is why it produced no second mixing.
+    </p>
+    <blockquote>
+      <p><strong>Notebook:</strong> annotate your own lesson-0002 request log with these line
+      references. Every row should now have a "because <em>this</em> line said so" beside it.</p>
+    </blockquote>
+
+    <h2>The two-sentence root cause</h2>
+    <p>
+      One hole in the server, one enabler in the client. Neither alone produces the mixed dict
+      through the UI. Fill these skeletons — then rewrite them in your own words until you'd
+      say them out loud without notes:
+    </p>
+    <pre><code>Server:  The follow-up PATCH on /api/review-student/&lt;uuid&gt;/ only guards
+         ____________________; it never asks ____________________, so
+         follow-up data meant for a ____________ decision can be merged
+         into a proposal that recorded ____________.
+
+Client:  ReviewStudent.jsx treats the server's ______________________
+         as ______________, routing the mentor into the ____________
+         feedback form, which then supplies the stray PATCH.</code></pre>
+    <blockquote>
+      <p><strong>Notebook:</strong> final versions, own words, no line numbers. If a sentence
+      needs more than two clauses, it's two sentences — that's fine.</p>
+    </blockquote>
+
+    <h2>Draft the write-up</h2>
+    <p>
+      The take-home deliverable is a short story with four beats. Draft it now, before the fix
+      exists — the fix must live inside your acceptance criterion, not replace it:
+    </p>
+    <ol class="steps">
+      <li><strong>What Ops saw</strong> — one line, in data terms (their words translated the way you did in lesson 2).</li>
+      <li><strong>Minimal repro</strong> — the click sequence <em>and</em> the equivalent raw requests, ending with the exact final JSON.</li>
+      <li><strong>Root cause</strong> — your two sentences from above.</li>
+      <li><strong>Acceptance criterion</strong> — fill in: <em>"The fix is correct if, for any sequence of ______, the response dict never contains ______."</em> If your blank can't be turned into a test later, sharpen it now.</li>
+    </ol>
+
+    <h2>Check yourself</h2>
+    <p>Before moving on, retrieve from memory — no scrolling up.</p>
+
+    <div class="quiz" data-quiz>
+      <fieldset class="quiz-question">
+        <legend>What does the PATCH guard check today?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q1" /><span>That the recorded value matches the follow-up being written</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" data-correct="true" /><span>Only that a reason isn't already present</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>That value, reason, and match_rating are all mutually consistent</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>views.py:37-38 — one membership check on reason. The recorded decision is invisible to it.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Which two behaviors combine to produce the mixed dict through the UI?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q2" /><span>The PATCH gap alone</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>The swallowed 400 alone</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" data-correct="true" /><span>Both — the gap lets the PATCH through, the swallow routes the mentor to the wrong form</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Server hole + client enabler. Fixing either one stops the UI repro — but only one of them stops every repro.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>If ReviewStudent surfaced the error and stopped the flow, could a mixed dict still be produced?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q3" data-correct="true" /><span>Yes — the API alone still accepts a PATCH that contradicts the recorded decision</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" /><span>No — the frontend was the only path in</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" /><span>Only after re-seeding the proposal</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>curl a PATCH at a fresh proposal — no decision at all — and the reason merges anyway. That's why the durable guard lives server-side.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Which pairing makes follow-up data consistent with the recorded decision?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q4" /><span>reason ↔ accept, match_rating ↔ reject</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" data-correct="true" /><span>reason ↔ reject, match_rating ↔ accept</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>Either follow-up is valid with either decision</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>This pairing is the heart of your acceptance criterion — the test you write next lesson will encode it.</p>
+      </fieldset>
+    </div>
+
+    <h2>Go deeper</h2>
+    <p>
+      Next lesson you write tests before touching the fix. Skim the
+      <a href="https://www.django-rest-framework.org/api-guide/testing/">DRF testing guide</a>
+      (<code>APIClient</code> is the tool) and the
+      <a href="https://docs.djangoproject.com/en/stable/topics/testing/overview/">Django testing overview</a>
+      — note how <code>TestCase</code> wraps each test in a transaction, so seeding a proposal
+      per test is cheap and clean. The existing tests in <code>matching/tests/</code> set the
+      house style; read one before writing your own.
+    </p>
+
+    <div class="callout">
+      <p class="kicker">Ask me anything</p>
+      <p>
+        If any row in the code table surprised you, or your two sentences keep coming out
+        vague, say them to the agent and let it push back — that's rehearsal.
+      </p>
+    </div>
+
+    <div class="next">
+      <p class="kicker">Up next</p>
+      <p>
+        <strong>Lesson 0004: Design the fix, test first.</strong> You'll turn your acceptance
+        criterion into a failing test (both mixed states), design the server-side guard — the
+        pairing you just confirmed — fit it into the repo's existing style, and watch your own
+        tests go red → green. Bring the notebook: criterion, pairing, repro log.
+      </p>
+    </div>
+
+    <footer class="doc">
+      <p><a href="../reference/architecture-map.html">Architecture map</a> · <a href="../MISSION.md">Mission</a> · <a href="0001-meet-the-matching-app.html">0001</a> · <a href="0002-reproduce-the-inconsistent-state.html">0002</a></p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

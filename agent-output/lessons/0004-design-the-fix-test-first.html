@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lesson 0004 · Design the fix, test first</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <link rel="stylesheet" href="../assets/quiz.css" />
+</head>
+<body>
+  <main>
+    <header class="doc">
+      <p class="kicker">Lesson 0004 · Mission: fix the matching take-home</p>
+      <h1>Design the fix, test first</h1>
+      <p class="muted">Today's win: your acceptance criterion becomes red tests, then green tests — and the Ops repro comes back dead.</p>
+    </header>
+
+    <p>
+      You have the repro, the two-sentence root cause, and a criterion that survived review.
+      An acceptance criterion you can't execute is a wish — so today it becomes a test suite
+      <em>before</em> the guard exists, and the guard you already designed makes it green.
+      You do all of it; the lesson keeps the order and flags the traps.
+    </p>
+
+    <h2>Criterion → test matrix</h2>
+    <p>
+      Translate each clause into a row. Every row: arrange a state, send one request, assert
+      the status code <em>and</em> the resulting dict (use <code>refresh_from_db()</code> like
+      the house tests do). For every 400 row, also assert the dict is
+      <strong>unchanged</strong> — a guard that refuses must not mutate.
+    </p>
+    <table>
+      <thead><tr><th>State before</th><th>Request</th><th>Expected</th><th>Covers</th></tr></thead>
+      <tbody>
+        <tr><td>fresh proposal</td><td><code>POST</code> accept / reject</td><td>200</td><td>baseline (tests already exist)</td></tr>
+        <tr><td><code>value: accept</code></td><td><code>PATCH match_rating</code></td><td>200</td><td>happy accept</td></tr>
+        <tr><td><code>value: reject</code></td><td><code>PATCH reason</code></td><td>200</td><td>happy decline</td></tr>
+        <tr><td><code>value: accept</code></td><td><code>PATCH reason</code></td><td>400, dict unchanged</td><td><strong>the Ops bug</strong></td></tr>
+        <tr><td><code>value: reject</code></td><td><code>PATCH match_rating</code></td><td>400, dict unchanged</td><td>your mirror state</td></tr>
+        <tr><td>fresh proposal</td><td><code>PATCH reason</code> / <code>match_rating</code></td><td>400, dict unchanged</td><td>bare follow-up, no decision</td></tr>
+      </tbody>
+    </table>
+    <p>
+      One more row hides in the frontend contract: send the happy-accept PATCH with the
+      <em>exact body <code>MatchingFeedbackForm</code> sends</em> — check what it puts in
+      <code>reason</code> (<code>MatchingFeedbackForm.jsx:22-25</code>). Why does that row
+      deserve its own test? Hold that thought until the guard section.
+    </p>
+
+    <h2>Audit the existing suite first</h2>
+    <p>
+      Before writing anything new, hold every existing test in <code>matching/tests/</code>
+      against your criterion, assertion by assertion. One of them asserts that a mixed state —
+      the very kind your criterion forbids — is the <em>correct</em> outcome. Find it.
+    </p>
+    <blockquote>
+      <p><strong>Notebook:</strong> which test, which assertions, and what it should assert
+      after the fix? This is a headline for your write-up: the suite didn't just miss the bug,
+      it <em>blessed</em> it — evidence the decision↔follow-up rule was never specified.</p>
+    </blockquote>
+
+    <h2>Write the tests, watch them fail</h2>
+    <ol class="steps">
+      <li>New file or new class — follow the house pattern in <code>test_review_student.py</code>: <code>APIClient</code> in <code>setUp</code>, seed <code>Mentor</code>/<code>MentorRequest</code>/<code>StudentProposal</code>, f-string URLs, <code>format="json"</code>. To arrange a decided proposal, the house tests call <code>StudentProposalService.update_response</code> directly — do the same.</li>
+      <li>Run <code>uv run python manage.py test matching</code>. Expect red.</li>
+      <li>Verify each failure is red <em>for the right reason</em>: <code>400 != 200</code>-style assertion mismatches, not setUp errors or typos. A red test that fails for the wrong reason tests nothing.</li>
+    </ol>
+
+    <h2>Design the guard</h2>
+    <p>You already designed it in your notebook — now make the decisions explicit:</p>
+    <ol class="steps">
+      <li><strong>Where does the check live — view or service?</strong> Re-read <code>views.py:27-28</code> and <code>views.py:37-38</code>: where do all the other guards live, and where does mutation happen? Follow the house pattern.</li>
+      <li><strong>What does it refuse?</strong> Your criterion, verbatim: a <code>reason</code> only ever lands on <code>value: "reject"</code>, a <code>match_rating</code> only on <code>value: "accept"</code> — and neither without a decision. What status and error shape? Match the existing errors.</li>
+      <li><strong>When is a reason "present"?</strong> The trap: if your guard treats <em>any</em> <code>reason</code> key as a reason, one of your happy-path rows will go red — the one sending the frontend's real body. Check what the service already does with falsy values (<code>services/student_proposal.py:35</code>) and make the guard agree with it. Your test suite, not this lesson, should be what catches this if you get it wrong — that's why that row exists.</li>
+      <li><strong>Order:</strong> before or after the existing reason-presence check? Does the observable outcome differ? Decide, one sentence in the notebook.</li>
+    </ol>
+
+    <h2>Implement, run, verify</h2>
+    <ol class="steps">
+      <li>Add the guard, fitting the file's existing style. Smallest change that satisfies the criterion — you're submitting a fix, not a refactor.</li>
+      <li><code>uv run python manage.py test matching</code> — green, including the existing test you revised in the audit.</li>
+      <li>Manual close-out: both servers up, rerun the lesson-0002 Ops repro click-for-click. Watch the network tab — which request dies now, and what does the mentor <em>see</em>? Confirm <code>/proposals</code> shows a dict your criterion allows.</li>
+      <li>Rerun your mirror experiment too. Both repro recipes from your notebook should now be dead.</li>
+    </ol>
+
+    <div class="callout">
+      <p class="kicker">One remaining decision</p>
+      <p>
+        With the guard live, the swallowed-400 frontend now renders the feedback form and its
+        PATCH fails — the mentor sees the error alert. The mixed state is dead, but the
+        experience is rough. Do you harden <code>ReviewStudent.jsx</code> too, or scope the
+        take-home to the server fix and note the frontend as follow-up? There's no free lunch:
+        pick, and write one sentence of justification. (Hint for the justification: which one
+        stops <em>every</em> repro, including curl?)
+      </p>
+    </div>
+
+    <h2>Check yourself</h2>
+    <p>Before writing the final write-up, retrieve from memory — no scrolling up.</p>
+
+    <div class="quiz" data-quiz>
+      <fieldset class="quiz-question">
+        <legend>Which single test would have caught the Ops bug before it shipped?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q1" /><span>POST accept, assert 200</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" data-correct="true" /><span>POST accept, then PATCH reason, assert 400 and dict unchanged</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>PATCH reason twice, assert the second is 400</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>The second-style test existed — but for reason-on-reason. Nobody wrote reason-on-accept, because the rule was never written down.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Why does every 400 test also assert the dict is unchanged?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q2" data-correct="true" /><span>A guard that refuses a request must not mutate state — partial writes are their own bug</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>DRF requires the response body to match the stored dict</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>Because refresh_from_db resets the JSONField otherwise</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Refuse-and-leave-untouched is part of the contract your criterion states implicitly.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>The existing suite blessed a mixed state. What does that tell an interviewer?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q3" /><span>The test framework was misconfigured</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" /><span>The service layer is untestable</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" data-correct="true" /><span>The decision↔follow-up rule was never specified — so tests encoded whatever the code did</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>That's the deepest finding of this exercise: the bug is a missing specification, and the tests prove it.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Why must the guard treat an empty reason dict as "no reason"?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q4" data-correct="true" /><span>The accept form PATCHes reason: {} alongside the rating — a naive guard would break the happy path</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>JSON cannot represent empty objects</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>Because the 400 response would otherwise be empty</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Same falsy convention the service already uses — guard and service must agree on what "present" means.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Where does the guard belong, per the repo's own pattern?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q5" /><span>In the service, next to the mutation</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" data-correct="true" /><span>In the view, beside the other request guards</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" /><span>In the model's save() method</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Every guard in this app lives in the view; services mutate. A fix that fights the house pattern reads as foreign code.</p>
+      </fieldset>
+    </div>
+
+    <h2>Finish line</h2>
+    <p>
+      Assemble the take-home from your notebook artifacts, in this order: what Ops saw (data
+      terms) → minimal repro (clicks, requests, final JSON) → root cause (your two sentences) →
+      acceptance criterion (v3) → the fix (what you added, where, and why there) → tests (the
+      matrix, red→green, plus the existing test you corrected) → the frontend decision and its
+      one-sentence justification.
+    </p>
+    <p>
+      Then rehearse: walk the agent through state transition → bug → fix → tests, unprompted,
+      in under five minutes. That's the interview. No new lesson follows — the mission file's
+      success criteria are all in your hands now.
+    </p>
+
+    <div class="callout">
+      <p class="kicker">Ask me anything</p>
+      <p>
+        Red for the wrong reason? Guard placement in doubt? Not sure your revised existing
+        test is honest? Bring it to the agent — better to argue it out here than in the
+        interview.
+      </p>
+    </div>
+
+    <footer class="doc">
+      <p><a href="../reference/architecture-map.html">Architecture map</a> · <a href="../MISSION.md">Mission</a> · <a href="0001-meet-the-matching-app.html">0001</a> · <a href="0002-reproduce-the-inconsistent-state.html">0002</a> · <a href="0003-from-repro-to-root-cause.html">0003</a></p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lesson 0002 · Reproduce the inconsistent state</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <link rel="stylesheet" href="../assets/quiz.css" />
+</head>
+<body>
+  <main>
+    <header class="doc">
+      <p class="kicker">Lesson 0002 · Mission: fix the matching take-home</p>
+      <h1>Reproduce the inconsistent state</h1>
+      <p class="muted">Today's win: you can produce the exact state Ops reported, on demand — and describe it precisely in terms of the <code>response</code> JSON.</p>
+    </header>
+
+    <p>
+      Ops said: proposals that look accepted but contain decline reasons. In an interview,
+      "reproduce" means more than "I saw it once" — it means you can trigger it deliberately
+      and say exactly what changed. Both servers should still be running from last lesson.
+      Full flow details live in the <a href="../reference/architecture-map.html">architecture map</a>.
+    </p>
+
+    <h2>Translate the report into data</h2>
+    <p>
+      Before touching anything, translate the Ops report into a data statement. You inspected
+      raw <code>response</code> JSON at <code>/proposals</code> last lesson.
+    </p>
+    <blockquote>
+      <p><strong>Notebook first:</strong> what would "accepted proposal with decline reasons" look
+      like as that JSON dict? Write the object out, keys and all, before scrolling further.</p>
+    </blockquote>
+    <p>Something like this — the exact reason keys don't matter:</p>
+    <pre><code>{
+  "value": "accept",          ← looks accepted
+  "recorded_at": "...",
+  "reason": { ... }           ← ...but carries decline answers
+}</code></pre>
+    <p>
+      Hold that picture. Your repro succeeds only if you see exactly this combination.
+    </p>
+
+    <h2>Plan the repro before you click</h2>
+    <p>
+      In lesson 1 each path was clean: <strong>accept</strong> = <code>POST</code> then
+      <code>PATCH match_rating</code>; <strong>decline</strong> = <code>POST</code> then
+      <code>PATCH reason</code>. Both paths write into <em>one shared dict</em>. Ops's state
+      mixes a piece of one path with a piece of the other. So ask:
+    </p>
+    <ol class="steps">
+      <li>
+        Re-read the <a href="../reference/architecture-map.html">endpoints table</a> row by row.
+        What does <code>POST</code> refuse to do twice? What does <code>PATCH</code> refuse to do
+        twice — and, crucially, what does it <em>never ask about</em>?
+      </li>
+      <li>
+        A mentor clicks <strong>Accept</strong>. Then they reopen the email and click
+        <strong>Decline</strong>. On mount, <code>ReviewStudent.jsx</code> fires a
+        <code>GET</code> and a <code>POST</code> in parallel — what does the server answer to
+        that second <code>POST</code>, and what does the frontend <em>do</em> with that answer?
+        (The map's frontend tour has the sentence you need.)
+      </li>
+      <li>
+        After that, the decline feedback form renders. When the mentor submits it, which request
+        carries the checked reasons, and which dict does it merge into?
+      </li>
+    </ol>
+    <blockquote>
+      <p><strong>Notebook:</strong> write your predicted click sequence <em>and</em> the predicted
+      final JSON. A repro you can't predict is a repro you can't defend in an interview.</p>
+    </blockquote>
+
+    <h2>Run it</h2>
+    <ol class="steps">
+      <li>Get a fresh proposal: <code>uv run python manage.py seed_proposal</code> (backend terminal).</li>
+      <li>Execute your predicted sequence in the dev inbox at <a href="http://localhost:5173/">localhost:5173</a>.</li>
+      <li>Watch the network tab while you go. Note each request's method and status — one of them will not be a 2xx, yet the page will act as if nothing happened.</li>
+      <li>Open <a href="http://localhost:5173/proposals">/proposals</a> and compare the raw JSON against your prediction. Success = <code>value: "accept"</code> <em>and</em> a populated <code>reason</code>.</li>
+      <li>Run it a second time from scratch. A good repro works every time, not once.</li>
+    </ol>
+
+    <details class="callout">
+      <summary><strong>Stuck after five minutes? Open me.</strong></summary>
+      <p>
+        Try: <strong>Accept</strong> (that's enough — no need to submit a rating), then back to
+        the inbox, click <strong>Decline</strong>, check a couple of reason boxes, submit. Then
+        read <code>/proposals</code>. If it didn't work, compare your request log against the
+        guards in the map: which one let the <code>PATCH</code> through?
+      </p>
+    </details>
+
+    <div class="callout">
+      <p class="kicker">One more experiment</p>
+      <p>
+        Now run the mirror image: from a fresh proposal, <strong>Decline</strong> — and stop
+        there, do not submit the reason form. Then click <strong>Accept</strong> from the same
+        email and submit a rating. Before clicking, predict request by request: which succeed,
+        which are refused, and by which guard? The result is a <em>different</em> mixed state
+        than Ops reported. Write down what you see.
+      </p>
+      <p>
+        <strong>Variant:</strong> repeat it, but submit the decline reasons before switching
+        links. The outcome now diverges — which guard produces the difference? Both
+        observations will earn their keep next lesson.
+      </p>
+    </div>
+
+    <h2>Check yourself</h2>
+    <p>Before moving on, retrieve from memory — no scrolling up.</p>
+
+    <div class="quiz" data-quiz>
+      <fieldset class="quiz-question">
+        <legend>In Ops's inconsistent state, what does the response dict contain?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q1" data-correct="true" /><span>value "accept" plus a populated reason</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>value "accept" plus match_rating only</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>value "reject" only</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>Two separate response dicts</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>One dict, two paths' data mixed: the decision from one request, the decline answers from another.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>During the repro, which request does the server refuse — and what does the frontend do about it?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q2" data-correct="true" /><span>The second POST; the frontend treats it as success anyway</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>The PATCH; the frontend shows an error banner</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>The GET; the frontend retries until it succeeds</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>"Response already recorded" is rendered as if the decision went through, so the flow continues to the feedback form.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Per the endpoints table, what does the PATCH guard check — and not check?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q3" /><span>It checks value; it skips checking reason</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" data-correct="true" /><span>It checks reason isn't already present; it never asks what value was</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" /><span>It checks nothing; any PATCH overwrites everything</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>The guard only prevents a second PATCH — the decision stored in value is invisible to it.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Where do you verify the final on-disk state of a proposal?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q4" /><span>The dev inbox</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" data-correct="true" /><span>The /proposals debug view</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>The terminal running seed_proposal</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>The inbox shows fake emails; /proposals shows the raw response JSON that Ops was reading.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>In the mirror experiment (decline decision, then accept link + rating), what did the second POST do to the recorded decision?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q5" data-correct="true" /><span>Nothing — the guard refused it: "Response already recorded"</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" /><span>Replaced the whole dict, erasing the decline data</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" /><span>Merged accept alongside the existing reject value</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>The replace in update_response only ever runs for a first decision — with value already present, the view blocks the POST before the service is called.</p>
+      </fieldset>
+    </div>
+
+    <h2>Go deeper</h2>
+    <p>
+      <strong>For next lesson's code reading:</strong> the
+      <a href="https://docs.djangoproject.com/en/stable/ref/models/fields/#jsonfield">JSONField docs</a>
+      explain the save semantics of the dict you just watched get merged and replaced.
+      The <a href="https://www.django-rest-framework.org/api-guide/views/">DRF function-based views</a>
+      page covers the <code>@api_view</code> + <code>Response</code> pattern you'll meet in
+      <code>matching/views.py</code>.
+    </p>
+    <p>
+      <strong>If you saw two POSTs in the network tab:</strong> why did only the first one count?
+      The <a href="https://react.dev/reference/react/useEffect">useEffect docs</a> (StrictMode
+      section) explain the double-fire you witnessed in dev — and why the server didn't care.
+    </p>
+
+    <div class="callout">
+      <p class="kicker">For your notebook</p>
+      <p>
+        You should now have three artifacts: the data-level definition of the bad state, a click
+        sequence that produces it reliably, and the request log of one run. Keep them — the
+        exercise write-up will want exactly this, and your test next-next lesson will encode it.
+      </p>
+    </div>
+
+    <div class="callout">
+      <p class="kicker">Ask me anything</p>
+      <p>
+        If a step didn't behave as predicted, or you can't explain <em>why</em> one of your
+        requests did what it did, ask the agent before moving on. Repro you can't explain
+        won't survive an interview question.
+      </p>
+    </div>
+
+    <div class="next">
+      <p class="kicker">Up next</p>
+      <p>
+        <strong>Lesson 0003: Find the root cause.</strong> Time to open the code —
+        <code>matching/views.py</code> and the services — and articulate, in your own words,
+        why the app allows what you just did. Bring your request log; every line of it maps to a
+        specific spot in the code.
+      </p>
+    </div>
+
+    <footer class="doc">
+      <p><a href="../reference/architecture-map.html">Architecture map</a> · <a href="../MISSION.md">Mission</a> · <a href="0001-meet-the-matching-app.html">Lesson 0001</a></p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

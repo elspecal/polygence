@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lesson 0001 · Meet the matching app</title>
+  <link rel="stylesheet" href="../assets/styles.css" />
+  <link rel="stylesheet" href="../assets/quiz.css" />
+</head>
+<body>
+  <main>
+    <header class="doc">
+      <p class="kicker">Lesson 0001 · Mission: fix the matching take-home</p>
+      <h1>Meet the matching app</h1>
+      <p class="muted">Today's win: the project runs on your machine and you can trace the whole mentor decision flow with your own clicks.</p>
+    </header>
+
+    <p>
+      Before we chase the bug Ops reported, you need the app alive in front of you. Step 1 of the
+      exercise is <em>run the project locally</em> — so let's do that now, together with a guided
+      walk of what you're seeing. Full details live in the
+      <a href="../reference/architecture-map.html">architecture map</a>.
+    </p>
+
+    <h2>The shape of the app</h2>
+    <p>
+      A student (<code>MentorRequest</code>) is proposed to a mentor (<code>StudentProposal</code>).
+      The mentor gets an email with two links: accept, decline. Each link carries the proposal's
+      UUID — <a href="../reference/architecture-map.html">a capability token</a>: no login, just
+      possession of the link. Clicking a link records the decision in a <code>response</code> JSON
+      blob, then a follow-up form records a <code>match_rating</code> (accept) or decline
+      <code>reason</code> (reject).
+    </p>
+
+    <h2>Run it</h2>
+    <p>Your machine has node and npm, but <code>uv</code> is missing. Install it first:</p>
+    <pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+    <p>Then restart your shell (or <code>source ~/.bashrc</code> / <code>~/.zshrc</code>) and bring up the backend:</p>
+    <pre><code>cd backend
+uv sync
+uv run python manage.py migrate
+uv run python manage.py seed_proposal
+uv run python manage.py runserver</code></pre>
+    <p>Expected: <code>seed_proposal</code> prints a UUID plus <strong>accept</strong> and <strong>decline</strong> links. In a second terminal:</p>
+    <pre><code>cd frontend
+npm install
+npm run dev</code></pre>
+    <p>Open <a href="http://localhost:5173/">http://localhost:5173/</a> — that's the dev inbox.</p>
+
+    <h2>Walk the happy path</h2>
+    <ol class="steps">
+      <li><strong>Inbox.</strong> You should see "Student proposal: Jamie Student" with two links. This is an <code>OutboxMessage</code>, a stand-in for real email.</li>
+      <li><strong>Click Accept.</strong> The page auto-fires a <code>POST</code> — no button press. You get "Your response has been recorded" plus a 0–10 rating dropdown.</li>
+      <li><strong>Pick a rating, submit.</strong> This is a <code>PATCH</code> to the same endpoint.</li>
+      <li><strong>Inspect.</strong> Open <a href="http://localhost:5173/proposals">/proposals</a> and read the raw <code>response</code> JSON. You should see <code>value: "accept"</code>, <code>match_rating</code>, and <code>recorded_at</code> in one dict.</li>
+      <li><strong>Repeat the reject path.</strong> Re-seed (<code>uv run python manage.py seed_proposal</code>), click Decline, fill the reason form, and inspect the JSON again.</li>
+    </ol>
+
+    <div class="callout">
+      <p class="kicker">For your notebook</p>
+      <p>
+        While you're clicking around, notice what each endpoint guards against — and what it
+        doesn't. The <a href="../reference/architecture-map.html">endpoints table</a> in the map
+        lists the guards. Hold onto any "that's odd" feeling; next lesson we reproduce the
+        inconsistent state.
+      </p>
+    </div>
+
+    <h2>Check yourself</h2>
+    <p>Before moving on, retrieve from memory — no scrolling up.</p>
+
+    <div class="quiz" data-quiz>
+      <fieldset class="quiz-question">
+        <legend>Which model stores the mentor's decision?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q1" data-correct="true" /><span>StudentProposal</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>MentorRequest</span></label>
+          <label class="quiz-option"><input type="radio" name="q1" /><span>OutboxMessage</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Each proposal sent to a mentor carries the decision in its response JSON.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Which HTTP method records the accept or reject decision itself?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q2" /><span>GET request</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" data-correct="true" /><span>POST request</span></label>
+          <label class="quiz-option"><input type="radio" name="q2" /><span>PATCH request</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>POST sets value and recorded_at; PATCH only adds reason or match_rating afterwards.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>Which HTTP method records the decline reason?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q3" /><span>POST request</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" /><span>GET request</span></label>
+          <label class="quiz-option"><input type="radio" name="q3" data-correct="true" /><span>PATCH request</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>The feedback form PATCHes reason or match_rating onto the same response record.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>In local dev, where do the seeded fake emails show up?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q4" data-correct="true" /><span>The dev inbox</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>The proposals page</span></label>
+          <label class="quiz-option"><input type="radio" name="q4" /><span>The Django admin</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>localhost:5173/ lists OutboxMessage rows with clickable accept/decline links.</p>
+      </fieldset>
+
+      <fieldset class="quiz-question">
+        <legend>The UUID in each email link acts as a:</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="q5" /><span>An API authentication key</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" /><span>A database primary key</span></label>
+          <label class="quiz-option"><input type="radio" name="q5" data-correct="true" /><span>A capability token</span></label>
+        </div>
+        <p class="quiz-feedback" role="status"></p>
+        <p class="quiz-note" hidden>Knowing the UUID proves you received the email — the same idea as production signed URLs.</p>
+      </fieldset>
+    </div>
+
+    <h2>Go deeper</h2>
+    <p>
+      <strong>Primary source:</strong> the
+      <a href="https://docs.djangoproject.com/en/stable/intro/tutorial01/">official Django tutorial</a>.
+      It's been a while since you did Django — skim tutorial parts 1–2 to refresh the
+      models → views → URLs rhythm, and part 5 for the test style used in this repo.
+    </p>
+
+    <div class="callout">
+      <p class="kicker">Ask me anything</p>
+      <p>
+        Stuck on a command, confused by the flow, or curious why the code is shaped the way it is?
+        Ask the agent — that's what it's for.
+      </p>
+    </div>
+
+    <div class="next">
+      <p class="kicker">Up next</p>
+      <p>
+        <strong>Lesson 0002: Reproduce the inconsistent state.</strong> Ops saw proposals that look
+        accepted but contain decline reasons. Before that lesson: run the app and click through
+        <em>both</em> paths at least once. Bring your notebook observations.
+      </p>
+    </div>
+
+    <footer class="doc">
+      <p><a href="../reference/architecture-map.html">Architecture map</a> · <a href="../MISSION.md">Mission</a></p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

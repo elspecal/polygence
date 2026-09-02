@@ -1,0 +1,30 @@
+# Working notes
+
+## User profile
+- Mission: land the job (primary); refresh Django development skills (secondary)
+- Django + DRF: some experience, rusty (long gap). React: comfortable.
+- Style: "Guide me, I do the work" — Socratic coaching, never give away the fix
+
+## Environment (as of session 2)
+- Repo checkout: `/home/miki/.local/share/opencode/repos/github.com/elspecal/polygence` (referenced as `repo` in opencode.json)
+- Node v24, npm 11 present. Python 3.14 present. `uv` installed as of end of session 1/2 (user completed lesson 0001).
+- User has run the app and walked both happy paths (lesson 0001 exit criteria met).
+
+## Teaching decisions
+- Lesson 0001 = "meet the app": install prerequisites, run it, trace the happy path. No bug hunting yet. ✅ done (user confirmed)
+- Lesson 0002 = reproduce the inconsistent state (exercise step 2). Shipped. Design: data-translation first (Ops report → response JSON shape), predict-then-run Socratic chain; full repro sequence hidden in a `<details>` hint ("stuck after five minutes"); plus mirror experiment (decline → accept) as a second observation.
+- Lesson 0002 correction (user found it): the original mirror-experiment text claimed POST replaces the dict and erases decline data. Wrong — verified in code: POST guard `views.py:27-28` refuses when `value` present; `update_response`'s replace (`services/student_proposal.py:22-28`) only runs for a first decision. Lesson callout + quiz Q5 + map (endpoints + services tables) corrected.
+- User progress: reproduced Ops state and independently articulated both guards (`Response already recorded`, `Reason already recorded`). Mirror result: `{"value": "reject", "match_rating": X}`. User has read `views.py` themselves and articulated the root cause at mechanism level, own words: "PATCH in review_student doesn't check value → mixed dict allowed."
+- Debrief pushes: ALL ANSWERED CORRECTLY. (1) PATCH should validate value against the follow-up written; (2) ReviewStudent.jsx swallows the 400 — surfacing it would break the UI repro; (3) variant confirmed: reasons-first blocks the rating PATCH via the reason guard, dict unchanged.
+- Lesson 0003 shipped (consolidation, not discovery): request-log → code-lines table (views.py:27-28/37-38, services/student_proposal.py:22-28/31-38, ReviewStudent.jsx:18-40/31-33), two-sentence root-cause skeleton (server hole + client enabler) to fill in own words, 4-beat write-up draft with fill-in acceptance criterion ("correct if, for any sequence of ___, the dict never contains ___"), quiz incl. the reason↔reject / match_rating↔accept pairing.
+- Write-up rehearsal round 1: user delivered root cause (server: PATCH validates reason-presence only, not against value type reject; client: ReviewStudent swallows 400 and renders FeedbackForm) + criterion v1: "for any sequence of requests, response dict never contains mixed states."
+- Criterion v2 delivered: allow-list of two shapes (accept+match_rating, reject+reason), explicit disallowed states (bare follow-up, reason w/ accept, match_rating w/ reject). Pushbacks round 2 given (pending v3): (1) follow-up can't be mandatory — accept-without-rating is legal traffic and the repro's starting point; (2) recorded_at present in every real dict — invariant is coexistence rules, not exhaustive key list; (3) scope: don't pin payload schemas (reason internals, rating range) — criterion is about decision↔follow-up consistency only.
+- Criterion v3 ACCEPTED (survived all pushes): "for any sequence of requests, response dict with reason must have value=reject; with match_rating must have value=accept." Coexistence rules, optional follow-ups, degenerate case covered. Typo noted for write-up: "respond" → response.
+- Lesson 0004 shipped (FINAL lesson): criterion → test matrix (dict-unchanged assertions on 400s; frontend-contract row — accept form sends reason:{}), existing-suite audit (KEY FINDING for user to discover: test_review_student.py:58-68 test_records_decline_reason PATCHes reason + match_rating onto a REJECT and asserts both land — suite blesses the mixed state; user must revise it), red-for-right-reason check, guard design questions (view vs service, falsy-{} trap, order), implement + manual repro close-out, frontend-hardening scoping decision, 5-question quiz, finish-line write-up assembly + 5-minute mock-interview rehearsal. No lesson 0005 planned — mission complete after 0004.
+- Implementation round COMPLETE: one test per matrix row, full suite green including revised existing tests, both repro recipes rerun and dead.
+- Mock interview round 2 answers: (1) flow walkthrough was the BUG sequence, not clean-path-first — feedback: open with happy path (POST value → paired PATCH → consistent), then interleave, and NAME the swallowed 400 at step 2; (2) guard location ✅ (view, house pattern: guards in view, service mutates after); (3) falsy vs not-None ✅ crisp; (4) concurrency suspicion correct PRE-fix but untested POST-fix — final Socratic rep assigned: trace two-PATCH scenario against new guard line by line (what state each read, which guard fires), pre vs post fix; have select_for_update ready as the scope-out phrase; name remaining lost-update class.
+- Mission state: rehearsal nearly done; remaining = final concurrency answer, write-up assembly (incl. frontend justification), git diff self-review, submit.
+- Lesson plan restructure: 0003 = consolidation (request log → code lines, two-sentence root cause incl. client enabler, draft take-home write-up paragraph). 0004 = fix + tests (user designs the check; user writes DRF APIClient test for both mixed states).
+- Do not reveal the root cause or fix. When the user is stuck, ask leading questions instead of answering.
+- Reference doc `reference/architecture-map.html` is the codebase map; lessons should link to it rather than repeat file tours.
+- Quiz contract (assets/quiz.js): `.quiz[data-quiz]` > `fieldset.quiz-question` with radio inputs, `data-correct="true"` on the right one, `.quiz-feedback` + hidden `.quiz-note`. Shared styles in `assets/styles.css`; lessons link both CSS files.
