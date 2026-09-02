@@ -3,6 +3,14 @@
 Ops has seen proposal records that look accepted but also contain decline
 reasons. That should never happen.
 
+The clean user flow starts in Mentor's inbox where they can accept or decline
+a fresh student proposal by clicking the corresponding link. The link leads to
+the review screen which fetches the data for that proposal and sends a POST
+request to record Mentor's decision. A feedback form is renderd on the screen
+where they can give a follow-up; a rating in case of acceptance and a reason in
+case of rejection. Upon submitting the form the given follow-up is PATCHed to
+the proposal.
+
 Additionally to the original report it turns out that the mirror state is also
 possible where a declined proposal contains a match rating as well as a proposal
 with no decision but only a follow-up rating/reason. Note though that the last
@@ -15,7 +23,8 @@ the server.
    `<ReviewStudent />` fires GET, POST in paralell ->
    `response` dict is has `value: "accept"`.
 2. Get back to inbox, click decline link ->
-   another pair of GET, POST ->
+   now POST response is `400`, "Response already recorded",
+   `<ReviewStudent />` swallows the error ->
    `response` dict still has `value: "accept"`.
 3. Select decline reason ->
    PATCH request ->
