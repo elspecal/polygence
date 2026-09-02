@@ -37,7 +37,21 @@ def review_student(request, current):
         if "reason" in student_proposal.response:
             return Response({"error": "Reason already recorded"}, 400)
 
-        StudentProposalService.update_reason_and_rating(student_proposal, reason, match_rating)
+        if "value" not in student_proposal.response:
+            return Response({"error": "No decision to follow-up yet"}, 400)
+
+        if reason and student_proposal.response["value"] != StudentProposal.REJECT:
+            return Response({"error": "Mismatched follow-up"}, 400)
+
+        if (
+            match_rating is not None
+            and student_proposal.response["value"] != StudentProposal.ACCEPT
+        ):
+            return Response({"error": "Mismatched follow-up"}, 400)
+
+        StudentProposalService.update_reason_and_rating(
+            student_proposal, reason, match_rating
+        )
         return Response({"message": "Reason recorded", "success": True})
 
     return Response(data={"message": "Method Not Allowed"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
